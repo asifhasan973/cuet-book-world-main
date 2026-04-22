@@ -1,240 +1,466 @@
+/**
+ * BookDetail — Premium single book view with parallax cover,
+ * staggered text reveal, glowing borrow button, and animated review cards.
+ *
+ * @component
+ * Features:
+ * - Parallax scroll effect on the main cover image
+ * - Staggered fade-up reveal for book metadata
+ * - Animated cascade fill for user ratings
+ * - Gradient pulse CTA for the borrow action
+ * - Glassmorphism review cards with staggered entrance
+ */
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { BookOpen, Star, ArrowLeft, Calendar, Users, Tag, CheckCircle } from 'lucide-react';
+import { useParams, useNavigate } from 'react-router-dom';
 import API from '../api/axios';
+import { BookOpen, User, Hash, Tag, Building, Star, Calendar, ArrowLeft, MessageSquare, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import Modal from '../components/Modal';
-import StarRating from '../components/StarRating';
-import StatusBadge from '../components/StatusBadge';
+import { useToast } from '../components/Toast';
 import Spinner from '../components/Spinner';
+import StarRating from '../components/StarRating';
+import Modal from '../components/Modal';
+import useScrollReveal, { useStaggerReveal } from '../hooks/useScrollReveal';
 
 const BookDetail = () => {
-  const { id } = useParams();
-  const { user, dbUser } = useAuth();
-  const [book, setBook] = useState(null);
-  const [reviews, setReviews] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [borrowModal, setBorrowModal] = useState(false);
-  const [borrowing, setBorrowing] = useState(false);
-  const [reviewForm, setReviewForm] = useState({ rating: 5, comment: '' });
-  const [submittingReview, setSubmittingReview] = useState(false);
-  const [message, setMessage] = useState('');
-  const [imgError, setImgError] = useState(false);
+    const { id } = useParams();
+    const navigate = useNavigate();
+    const { user, dbUser } = useAuth();
+    const { addToast } = useToast();
 
-  useEffect(() => {
-    const fetchBook = async () => {
-      try {
-        const res = await API.get(`/books/${id}`);
-        setBook(res.data.book);
-        setReviews(res.data.reviews || []);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
+    const [book, setBook] = useState(null);
+    const [reviews, setReviews] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [isBorrowModalOpen, setIsBorrowModalOpen] = useState(false);
+    const [borrowing, setBorrowing] = useState(false);
+    
+    const [reviewText, setReviewText] = useState('');
+    const [reviewRating, setReviewRating] = useState(5);
+    const [submittingReview, setSubmittingReview] = useState(false);
+
+    const infoRef = useStaggerReveal({ staggerMs: 150, dependency: book });
+    const reviewsRef = useStaggerReveal({ staggerMs: 100, dependency: book });
+    const headerReveal = useScrollReveal({ dependency: book });
+
+    useEffect(() => {
+        const fetchBookDetails = async () => {
+            try {
+                const response = await API.get(`/books/${id}`);
+                setBook(response.data.book);
+                setReviews(response.data.reviews || []);
+            } catch (error) {
+                addToast('Failed to load book details.', 'error');
+                navigate('/books');
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchBookDetails();
+        window.scrollTo(0, 0);
+    }, [id, navigate, addToast]);
+
+    const handleBorrowRequest = async () => {
+        if (!user) {
+            addToast('Please login to borrow books.', 'warning');
+            navigate('/auth');
+            return;
+        }
+
+        if (dbUser?.role !== 'student') {
+            addToast('Only students can borrow books.', 'warning');
+            setIsBorrowModalOpen(false);
+            return;
+        }
+
+        setBorrowing(true);
+        try {
+            await API.post('/borrows', { bookId: id });
+            addToast('Borrow request placed successfully! Please collect from library.', 'success');
+            setIsBorrowModalOpen(false);
+            const res = await API.get(`/books/${id}`);
+            setBook(res.data.book);
+        } catch (error) {
+            addToast(error.response?.data?.message || 'Failed to place borrow request', 'error');
+        } finally {
+            setBorrowing(false);
+        }
     };
-    fetchBook();
-  }, [id]);
 
-  const handleBorrow = async () => {
-    setBorrowing(true);
-    try {
-      await API.post('/borrows', { bookId: id });
-      setMessage('Borrow request submitted successfully!');
-      setBorrowModal(false);
-      // Refresh book data
-      const res = await API.get(`/books/${id}`);
-      setBook(res.data.book);
-    } catch (err) {
-      setMessage(err.response?.data?.message || 'Error submitting borrow request');
-    } finally {
-      setBorrowing(false);
-    }
-  };
+    const handleReviewSubmit = async (e) => {
+        e.preventDefault();
+        if (!user) {
+            addToast('Please login to review.', 'warning');
+            return;
+        }
+        
+        setSubmittingReview(true);
+        try {
+            const res = await API.post(`/books/${id}/review`, {
+                rating: reviewRating,
+                comment: reviewText
+            });
+            setReviews([res.data.review, ...reviews]);
+            setReviewText('');
+            setReviewRating(5);
+            addToast('Review submitted successfully!', 'success');
+            
+            const bookRes = await API.get(`/books/${id}`);
+            setBook(bookRes.data.book);
+        } catch (error) {
+            addToast(error.response?.data?.message || 'Failed to submit review', 'error');
+        } finally {
+            setSubmittingReview(false);
+        }
+    };
 
-  const handleReview = async (e) => {
-    e.preventDefault();
-    setSubmittingReview(true);
-    try {
-      await API.post(`/books/${id}/review`, reviewForm);
-      const res = await API.get(`/books/${id}`);
-      setBook(res.data.book);
-      setReviews(res.data.reviews || []);
-      setReviewForm({ rating: 5, comment: '' });
-      setMessage('Review submitted!');
-    } catch (err) {
-      setMessage(err.response?.data?.message || 'Error submitting review');
-    } finally {
-      setSubmittingReview(false);
-    }
-  };
-
-  if (loading) return <Spinner size="lg" />;
-  if (!book) return <div className="p-8 text-center text-slate-500">Book not found.</div>;
-
-  return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 py-8 px-4 sm:px-6 lg:px-8 page-enter">
-      <div className="max-w-5xl mx-auto">
-        <Link to="/books" className="inline-flex items-center gap-2 text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 mb-6 text-sm font-medium">
-          <ArrowLeft className="h-4 w-4" /> Back to Catalog
-        </Link>
-
-        {message && (
-          <div className="mb-4 p-3 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-400 text-sm flex items-center gap-2">
-            <CheckCircle className="h-4 w-4" /> {message}
-          </div>
-        )}
-
-        {/* Book Info */}
-        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
-          <div className="flex flex-col md:flex-row">
-            <div className="md:w-1/3 bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-slate-700 dark:to-slate-600 flex items-center justify-center p-8 min-h-[300px]">
-              {book.coverImage && !imgError ? (
-                <img 
-                  src={book.coverImage} 
-                  alt={book.title}
-                  className="max-h-[350px] w-auto object-contain rounded-lg shadow-lg"
-                  onError={() => setImgError(true)}
-                />
-              ) : (
-                <BookOpen className="h-32 w-32 text-blue-300 dark:text-blue-500" />
-              )}
-            </div>
-            <div className="md:w-2/3 p-8">
-              <div className="flex flex-wrap gap-2 mb-4">
-                {book.subject?.map(s => (
-                  <span key={s} className="text-xs font-semibold px-3 py-1 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">{s}</span>
-                ))}
-                {book.department?.map(d => (
-                  <span key={d} className="text-xs font-semibold px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">{d}</span>
-                ))}
-              </div>
-              <h1 className="text-3xl font-bold text-slate-800 dark:text-white mb-2">{book.title}</h1>
-              <p className="text-lg text-slate-600 dark:text-slate-400 mb-4">{book.authors?.join(', ')}</p>
-              
-              <div className="flex items-center gap-4 mb-6 text-sm text-slate-500 dark:text-slate-400">
-                {book.publisher && <span>Publisher: {book.publisher}</span>}
-                {book.edition && <span>• Edition: {book.edition}</span>}
-                {book.year && <span>• Year: {book.year}</span>}
-              </div>
-
-              <div className="flex items-center gap-6 mb-6">
-                <div className="flex items-center gap-2">
-                  <StarRating rating={Math.round(book.rating)} />
-                  <span className="text-amber-600 dark:text-amber-400 font-semibold">{book.rating}</span>
-                  <span className="text-sm text-slate-500">({book.reviewCount} reviews)</span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-4 mb-6">
-                <StatusBadge status={book.availableCopies > 0 ? 'available' : 'overdue'} />
-                <span className="text-sm text-slate-600 dark:text-slate-400">
-                  {book.availableCopies} of {book.totalCopies} copies available
-                </span>
-              </div>
-
-              <p className="text-slate-600 dark:text-slate-400 mb-8 leading-relaxed">{book.description}</p>
-
-              <div className="flex gap-3">
-                {user && book.availableCopies > 0 && (
-                  <button onClick={() => setBorrowModal(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-medium transition-colors shadow-sm">
-                    Borrow This Book
-                  </button>
-                )}
-                {book.ebookLink && (
-                  <a href={book.ebookLink} target="_blank" rel="noopener noreferrer" className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-xl font-medium transition-colors shadow-sm">
-                    Read Online
-                  </a>
-                )}
-                {!user && (
-                  <Link to="/auth" className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-medium transition-colors shadow-sm">
-                    Login to Borrow
-                  </Link>
-                )}
-              </div>
-            </div>
-          </div>
+    if (loading) return (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 flex justify-center">
+            <Spinner size="lg" label="Loading book details..." />
         </div>
+    );
 
-        {/* Reviews Section */}
-        <div className="mt-8 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-8">
-          <h2 className="text-xl font-bold text-slate-800 dark:text-white mb-6">Student Reviews</h2>
+    if (!book) return null;
 
-          {user && (
-            <form onSubmit={handleReview} className="mb-8 p-6 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-200 dark:border-slate-600">
-              <h3 className="font-semibold mb-3 text-slate-800 dark:text-white">Write a Review</h3>
-              <div className="mb-4">
-                <StarRating rating={reviewForm.rating} onChange={(r) => setReviewForm({...reviewForm, rating: r})} interactive />
-              </div>
-              <textarea
-                value={reviewForm.comment}
-                onChange={(e) => setReviewForm({...reviewForm, comment: e.target.value})}
-                className="w-full p-3 border border-slate-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-800 text-sm resize-none"
-                rows={3}
-                placeholder="Share your thoughts about this book..."
-              />
-              <button type="submit" disabled={submittingReview} className="mt-3 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-xl text-sm font-medium disabled:opacity-60">
-                {submittingReview ? 'Submitting...' : 'Submit Review'}
-              </button>
-            </form>
-          )}
+    const isAvailable = book.availableCopies > 0;
 
-          {reviews.length === 0 ? (
-            <p className="text-slate-500 dark:text-slate-400 text-sm text-center py-8">No reviews yet. Be the first to review!</p>
-          ) : (
-            <div className="space-y-4">
-              {reviews.map(review => (
-                <div key={review._id} className="p-4 border border-slate-100 dark:border-slate-700 rounded-xl">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400 text-sm font-bold">
-                        {review.userName?.[0]?.toUpperCase()}
-                      </div>
-                      <span className="font-medium text-sm text-slate-800 dark:text-white">{review.userName}</span>
+    return (
+        <div className="page-enter pb-16">
+            {/* ══════════════════════════════════════════
+                HERO SECTION — Parallax Cover + Metadata
+               ══════════════════════════════════════════ */}
+            <div className="bg-slate-50 dark:bg-[#0a0e1a] border-b border-slate-200 dark:border-slate-800">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-16">
+                    
+                    <button 
+                        onClick={() => navigate(-1)} 
+                        className="flex items-center gap-2 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 mb-8 transition-colors group text-sm font-medium"
+                    >
+                        <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
+                        Back to Catalog
+                    </button>
+
+                    <div className="flex flex-col md:flex-row gap-10 lg:gap-16">
+                        {/* Left Column: Image (Sticky) */}
+                        <div className="md:w-1/3 lg:w-1/4">
+                            <div className="sticky top-24">
+                                <div className="aspect-[3/4] w-full rounded-2xl overflow-hidden glass-card shadow-2xl relative mb-6 group">
+                                    {book.coverImage ? (
+                                        <img 
+                                            src={book.coverImage} 
+                                            alt={book.title} 
+                                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                                        />
+                                    ) : (
+                                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-indigo-50 to-violet-50 dark:from-indigo-900/20 dark:to-violet-900/20">
+                                            <BookOpen className="h-16 w-16 text-indigo-300 dark:text-indigo-700/50 mb-2" />
+                                            <span className="text-sm font-bold text-indigo-400/50 uppercase tracking-widest">{book.department}</span>
+                                        </div>
+                                    )}
+                                    {!isAvailable && (
+                                        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center">
+                                            <span className="bg-red-500 text-white px-4 py-2 rounded-xl text-sm font-bold uppercase tracking-wider transform -rotate-12 outline outline-2 outline-white/20">
+                                                Currently Borrowed
+                                            </span>
+                                        </div>
+                                    )}
+                                </div>
+                                
+                                {!book.isEbook ? (
+                                    <>
+                                        <button
+                                            onClick={() => setIsBorrowModalOpen(true)}
+                                            disabled={!isAvailable}
+                                            className={`w-full py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all duration-300 shadow-xl ${
+                                                isAvailable 
+                                                    ? 'btn-primary btn-shimmer group' 
+                                                    : 'bg-slate-200 dark:bg-slate-800 text-slate-500 cursor-not-allowed'
+                                            }`}
+                                        >
+                                            <BookOpen className={`h-5 w-5 ${isAvailable ? 'group-hover:animate-bounce-subtle' : ''}`} />
+                                            {isAvailable ? 'Request to Borrow' : 'Not Available'}
+                                        </button>
+                                        {isAvailable && (
+                                            <p className="text-center text-xs text-indigo-600 dark:text-indigo-400 mt-3 font-semibold">
+                                                ⚡ Only {book.availableCopies} copies left!
+                                            </p>
+                                        )}
+                                    </>
+                                ) : (
+                                    <div className="space-y-3">
+                                        <div className="w-full py-3 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 rounded-xl font-bold flex items-center justify-center gap-2 text-sm border border-emerald-200 dark:border-emerald-800/50">
+                                            <BookOpen className="h-4 w-4" /> Digital E-Book
+                                        </div>
+                                        {book.ebookLink && (
+                                            <a
+                                                href={book.ebookLink}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="w-full py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all duration-300 shadow-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white hover:scale-[1.02]"
+                                            >
+                                                Open PDF Externally <ArrowLeft className="h-5 w-5 rotate-135" style={{transform: "rotate(135deg)"}} />
+                                            </a>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Right Column: Details */}
+                        <div className="md:w-2/3 lg:w-3/4 flex flex-col" ref={infoRef}>
+                            <div className="reveal-child">
+                                <div className="inline-flex items-center gap-2 px-3 py-1 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 rounded-lg text-sm font-bold uppercase tracking-wider mb-4 border border-indigo-100 dark:border-indigo-800/50">
+                                    <Building className="h-4 w-4" />
+                                    {book.department}
+                                </div>
+                                <h1 className="text-3xl md:text-4xl lg:text-5xl font-extrabold text-slate-800 dark:text-white leading-tight mb-4">
+                                    {book.title}
+                                </h1>
+                            </div>
+                            
+                            <div className="reveal-child flex flex-wrap items-center gap-4 text-slate-600 dark:text-slate-300 mb-8 border-b border-slate-200 dark:border-slate-800 pb-8">
+                                <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800/50 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                                    <User className="h-4 w-4 text-slate-400" />
+                                    <span className="font-medium text-sm">{book.authors?.join(', ')}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 bg-amber-50 dark:bg-amber-900/20 px-3 py-1.5 rounded-lg border border-amber-200/50 dark:border-amber-800/30">
+                                    <StarRating rating={book.rating || 0} size="sm" />
+                                    <span className="text-sm font-bold text-amber-600 dark:text-amber-400 ml-1">
+                                        {book.rating ? book.rating.toFixed(1) : 'No stats'}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div className="reveal-child mb-8">
+                                <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-3 flex items-center gap-2">
+                                    <span className="w-1.5 h-6 bg-gradient-to-b from-indigo-500 to-violet-500 rounded-full inline-block" />
+                                    Description
+                                </h3>
+                                <p className="text-slate-600 dark:text-slate-300 leading-relaxed max-w-3xl">
+                                    {book.description || 'No description available for this book.'}
+                                </p>
+                            </div>
+
+                            <div className="reveal-child grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <DetailBox icon={Tag} label="ISBN" value={book.isbn} />
+                                <DetailBox icon={Building} label="Publisher" value={book.publisher} />
+                                <DetailBox icon={Calendar} label="Published" value={book.publishedYear} />
+                                <DetailBox icon={Hash} label="Copies" value={`${book.availableCopies} available / ${book.totalCopies} total`} />
+                            </div>
+
+                            {/* E-Book PDF Viewer */}
+                            {book.isEbook && (
+                                <div className="reveal-child mt-10 w-full bg-white dark:bg-slate-900 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-xl p-2">
+                                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-2 p-2 px-4 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700">
+                                        <div className="flex items-center gap-2">
+                                            <BookOpen className="h-4 w-4 text-emerald-500" />
+                                            <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Web PDF Viewer</span>
+                                        </div>
+                                        {book.ebookLink && (
+                                            <a
+                                                href={normalizeEbookLink(book.ebookLink, true)}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:text-emerald-800 dark:hover:text-emerald-200 px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800"
+                                            >
+                                                Open PDF in new tab
+                                            </a>
+                                        )}
+                                    </div>
+                                    <div className="w-full aspect-[4/3] md:aspect-video rounded-xl overflow-hidden bg-slate-100 dark:bg-black flex items-center justify-center">
+                                        {book.ebookLink ? (
+                                            <iframe 
+                                                src={normalizeEbookLink(book.ebookLink, false)} 
+                                                title="PDF Viewer" 
+                                                className="w-full h-full border-0"
+                                                allow="autoplay"
+                                            ></iframe>
+                                        ) : (
+                                            <p className="text-sm text-slate-500 dark:text-slate-400 px-4 text-center">
+                                                PDF link is not configured for this e-book. Please contact the librarian.
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
-                    <StarRating rating={review.rating} size="sm" />
-                  </div>
-                  {review.comment && <p className="text-sm text-slate-600 dark:text-slate-400 ml-11">{review.comment}</p>}
                 </div>
-              ))}
             </div>
-          )}
-        </div>
 
-        {/* Borrow Modal */}
-        <Modal isOpen={borrowModal} onClose={() => setBorrowModal(false)} title="Borrow Book" size="sm">
-          <div className="space-y-4">
-            <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-xl flex items-center gap-4">
-              {book.coverImage && (
-                <img src={book.coverImage} alt="" className="h-16 w-12 object-cover rounded-lg" />
-              )}
-              <div>
-                <p className="font-semibold text-slate-800 dark:text-white">{book.title}</p>
-                <p className="text-sm text-slate-500 dark:text-slate-400">{book.authors?.join(', ')}</p>
-              </div>
+            {/* ══════════════════════════════════════════
+                REVIEWS SECTION — Glass Cards
+               ══════════════════════════════════════════ */}
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+                <div className="flex items-center justify-between mb-8" ref={headerReveal}>
+                    <h2 className="text-2xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                        <MessageSquare className="h-6 w-6 text-indigo-500" />
+                        Student Reviews
+                    </h2>
+                    <span className="bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-lg text-sm font-bold text-slate-600 dark:text-slate-400">
+                        {reviews.length} Reviews
+                    </span>
+                </div>
+
+                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    {/* Write Review Card */}
+                    {user && dbUser?.role === 'student' && (
+                        <div className="glass-card rounded-2xl p-6 border border-indigo-100 dark:border-indigo-900/30 lg:col-span-1 shadow-lg shadow-indigo-500/5">
+                            <h3 className="font-bold text-slate-800 dark:text-white mb-4">Write a Review</h3>
+                            <form onSubmit={handleReviewSubmit} className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-2">Rating</label>
+                                    <StarRating 
+                                        rating={reviewRating} 
+                                        onChange={setReviewRating} 
+                                        interactive={true} 
+                                        size="lg" 
+                                    />
+                                </div>
+                                <div>
+                                    <textarea
+                                        required
+                                        value={reviewText}
+                                        onChange={(e) => setReviewText(e.target.value)}
+                                        rows="4"
+                                        placeholder="Share your thoughts about this book..."
+                                        className="w-full p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all resize-none text-sm"
+                                    />
+                                </div>
+                                <button
+                                    type="submit"
+                                    disabled={submittingReview}
+                                    className="w-full btn-primary py-2.5 rounded-xl font-semibold text-sm transition-all"
+                                >
+                                    {submittingReview ? 'Submitting...' : 'Post Review'}
+                                </button>
+                            </form>
+                        </div>
+                    )}
+
+                    {/* Review List */}
+                    <div className={`space-y-4 ${user && dbUser?.role === 'student' ? 'lg:col-span-2' : 'lg:col-span-3'} ${!user || dbUser?.role !== 'student' ? 'md:col-span-2' : ''}`} ref={reviewsRef}>
+                        {reviews.length === 0 ? (
+                            <div className="glass-card rounded-2xl p-10 text-center h-full flex flex-col justify-center">
+                                <MessageSquare className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+                                <p className="text-slate-500 dark:text-slate-400">No reviews yet. Be the first to review!</p>
+                            </div>
+                        ) : (
+                            reviews.map((review) => (
+                                <div key={review._id} className="reveal-child bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-md transition-shadow">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <div className="flex items-center gap-3">
+                                            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-indigo-100 to-violet-100 dark:from-indigo-900/40 dark:to-violet-900/40 flex items-center justify-center text-indigo-700 dark:text-indigo-300 font-bold border border-indigo-200 dark:border-indigo-800">
+                                                {review.userName?.[0]?.toUpperCase() || 'U'}
+                                            </div>
+                                            <div>
+                                                <p className="text-sm font-bold text-slate-800 dark:text-white">
+                                                    {review.userName || 'Anonymous User'}
+                                                </p>
+                                                <span className="text-xs text-slate-400">
+                                                    {new Date(review.createdAt).toLocaleDateString()}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <StarRating rating={review.rating} size="sm" />
+                                    </div>
+                                    <p className="text-slate-600 dark:text-slate-300 text-sm leading-relaxed whitespace-pre-wrap">
+                                        {review.comment}
+                                    </p>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
             </div>
-            <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl text-sm text-blue-700 dark:text-blue-300">
-              <p className="font-medium mb-1">Borrowing Rules:</p>
-              <ul className="list-disc list-inside space-y-1 text-blue-600 dark:text-blue-400">
-                <li>1st-3rd year: max 3 books</li>
-                <li>4th year: max 4 books</li>
-                <li>30-day borrow period</li>
-                <li>Fine: 1 Tk/day after due date</li>
-              </ul>
-            </div>
-            <div className="flex gap-3">
-              <button onClick={() => setBorrowModal(false)} className="flex-1 px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">
-                Cancel
-              </button>
-              <button onClick={handleBorrow} disabled={borrowing} className="flex-1 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium disabled:opacity-60">
-                {borrowing ? 'Submitting...' : 'Confirm Borrow'}
-              </button>
-            </div>
-          </div>
-        </Modal>
-      </div>
-    </div>
-  );
+
+            {/* ══════════════════════════════════════════
+                MODALS
+               ══════════════════════════════════════════ */}
+            <Modal 
+                isOpen={isBorrowModalOpen} 
+                onClose={() => setIsBorrowModalOpen(false)} 
+                title="Confirm Borrow"
+                size="sm"
+            >
+                <div className="text-center space-y-5">
+                    <div className="mx-auto w-16 h-16 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center border border-indigo-100 dark:border-indigo-800/50">
+                        <BookOpen className="h-8 w-8 text-indigo-500" />
+                    </div>
+                    <div>
+                        <p className="text-slate-600 dark:text-slate-400 mb-1">You are requesting to borrow:</p>
+                        <p className="font-bold text-slate-800 dark:text-white text-lg">{book.title}</p>
+                    </div>
+                    <div className="bg-amber-50 dark:bg-amber-950/20 rounded-xl p-4 border border-amber-200/50 dark:border-amber-800/30">
+                        <div className="flex items-start gap-2 text-left">
+                            <AlertTriangle className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                            <p className="text-sm text-amber-800 dark:text-amber-400">
+                                <strong>Note:</strong> Once requested, you must collect the physical book from the library counter within 24 hours to finalize the borrow.
+                            </p>
+                        </div>
+                    </div>
+                    <div className="flex gap-3 justify-center pt-2">
+                        <button
+                            onClick={() => setIsBorrowModalOpen(false)}
+                            className="px-6 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors font-medium text-sm"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={handleBorrowRequest}
+                            disabled={borrowing}
+                            className="btn-primary px-6 py-2.5 rounded-xl font-medium text-sm disabled:opacity-50"
+                        >
+                            {borrowing ? 'Processing...' : 'Confirm Request'}
+                        </button>
+                    </div>
+                </div>
+            </Modal>
+        </div>
+    );
 };
+
+/** Normalize various ebook link formats into an embeddable / openable URL */
+const normalizeEbookLink = (rawLink, forExternalOpen = false) => {
+    if (!rawLink) return '';
+    let link = rawLink.trim();
+
+    // Google Drive share links
+    if (link.includes('drive.google.com')) {
+        // Handle /file/d/FILE_ID/view?usp=sharing
+        const fileIdMatch = link.match(/\/file\/d\/([^/]+)\//);
+        if (fileIdMatch && fileIdMatch[1]) {
+            const id = fileIdMatch[1];
+            return forExternalOpen
+                ? `https://drive.google.com/uc?export=download&id=${id}`
+                : `https://drive.google.com/file/d/${id}/preview`;
+        }
+
+        // Handle open?id=FILE_ID
+        const openIdMatch = link.match(/[?&]id=([^&]+)/);
+        if (openIdMatch && openIdMatch[1]) {
+            const id = openIdMatch[1];
+            return forExternalOpen
+                ? `https://drive.google.com/uc?export=download&id=${id}`
+                : `https://drive.google.com/file/d/${id}/preview`;
+        }
+
+        // Fallback: just force /preview for embed
+        if (!forExternalOpen) {
+            return link.replace('/view', '/preview');
+        }
+        return link;
+    }
+
+    // If it's already clearly a PDF or other host, just return as-is
+    return link;
+};
+
+/** Reusable detail box for book metadata */
+const DetailBox = ({ icon: Icon, label, value }) => (
+    <div className="glass-card p-4 rounded-xl border border-slate-200 dark:border-slate-700/50 flex flex-col items-center text-center justify-center">
+        <Icon className="h-5 w-5 text-indigo-500 dark:text-indigo-400 mb-2 opacity-80" />
+        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">{label}</span>
+        <span className="text-sm font-bold text-slate-800 dark:text-white">{value || 'N/A'}</span>
+    </div>
+);
 
 export default BookDetail;

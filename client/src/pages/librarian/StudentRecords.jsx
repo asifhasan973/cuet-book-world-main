@@ -4,6 +4,7 @@ import Sidebar from '../../components/Sidebar';
 import Spinner from '../../components/Spinner';
 import StatusBadge from '../../components/StatusBadge';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../components/Toast';
 import { Search, Trash2 } from 'lucide-react';
 
 const StudentRecords = () => {
@@ -15,6 +16,7 @@ const StudentRecords = () => {
   const [selectedName, setSelectedName] = useState('');
   const [borrows, setBorrows] = useState([]);
   const [deletingId, setDeletingId] = useState(null);
+  const { addToast } = useToast();
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -29,10 +31,14 @@ const StudentRecords = () => {
   const viewBorrows = async (userId, name) => {
     setSelected(userId);
     setSelectedName(name);
+    setBorrows([]); // Clear while loading optional
     try {
       const res = await API.get(`/users/${userId}/borrows`);
       setBorrows(res.data);
-    } catch (err) { console.error(err); }
+    } catch (err) { 
+        console.error(err); 
+        addToast(err.response?.data?.message || 'Failed to fetch borrowing history', 'error');
+    }
   };
 
   const handleDeleteBorrow = async (borrowId) => {
@@ -41,7 +47,11 @@ const StudentRecords = () => {
     try {
       await API.delete(`/users/${selected}/borrows/${borrowId}`);
       setBorrows(prev => prev.filter(b => b._id !== borrowId));
-    } catch (err) { console.error(err); }
+      addToast('Borrow record successfully removed', 'success');
+    } catch (err) { 
+        console.error(err); 
+        addToast(err.response?.data?.message || 'Failed to remove borrow record', 'error');
+    }
     finally { setDeletingId(null); }
   };
 

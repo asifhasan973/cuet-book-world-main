@@ -83,6 +83,7 @@ router.delete('/:userId/borrows/:borrowId', authMiddleware, requireRole('admin')
       userId: req.params.userId,
       message: `An admin has removed a borrow record from your account.`,
       type: 'info',
+      link: '/profile?tab=notifications',
     });
 
     res.json({ message: 'Borrow record deleted and book availability restored' });
@@ -106,6 +107,7 @@ router.put('/:id/role', authMiddleware, requireRole('admin'), async (req, res) =
       userId: user._id,
       message: `Your role has been changed to ${role}.`,
       type: 'info',
+      link: '/profile?tab=notifications',
     });
 
     res.json({ message: 'Role updated', user });

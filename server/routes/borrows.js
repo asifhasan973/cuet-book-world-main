@@ -119,6 +119,7 @@ router.put('/:id/approve', authMiddleware, requireRole('librarian', 'admin'), as
       userId: borrow.userId,
       message: `Your borrow request for "${book.title}" has been approved! Due: ${dueDate.toLocaleDateString()}`,
       type: 'success',
+      link: '/profile?tab=borrows',
     });
 
     res.json({ message: 'Borrow approved', borrow });
@@ -140,6 +141,7 @@ router.put('/:id/reject', authMiddleware, requireRole('librarian', 'admin'), asy
       userId: borrow.userId,
       message: `Your borrow request for "${borrow.bookId.title}" has been rejected.`,
       type: 'error',
+      link: '/profile?tab=borrows',
     });
 
     res.json({ message: 'Borrow rejected', borrow });

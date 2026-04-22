@@ -3,7 +3,7 @@ import API from '../../api/axios';
 import Sidebar from '../../components/Sidebar';
 import Spinner from '../../components/Spinner';
 import StatusBadge from '../../components/StatusBadge';
-import { Users, BookOpen, BookMarked, DollarSign, AlertTriangle, ShieldCheck, Plus, Trash2 } from 'lucide-react';
+import { Users, BookOpen, BookMarked, DollarSign, AlertTriangle, ShieldCheck, Plus, Trash2, Pin } from 'lucide-react';
 
 const AdminDashboard = () => {
   const [stats, setStats] = useState({});
@@ -40,6 +40,13 @@ const AdminDashboard = () => {
   const deleteAnnouncement = async (id) => {
     try {
       await API.delete(`/announcements/${id}`);
+      fetchData();
+    } catch (err) { console.error(err); }
+  };
+
+  const setHomeAnnouncement = async (id) => {
+    try {
+      await API.put(`/announcements/${id}/show-on-home`);
       fetchData();
     } catch (err) { console.error(err); }
   };
@@ -99,10 +106,28 @@ const AdminDashboard = () => {
                       <div>
                         <p className="font-medium text-sm text-slate-800 dark:text-white">{a.title}</p>
                         <p className="text-xs text-slate-500 dark:text-slate-400">{a.message}</p>
+                        {a.showOnHome && (
+                          <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-indigo-50 dark:bg-indigo-900/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-800/40">
+                            <Pin className="h-3 w-3" /> Shown on Home
+                          </div>
+                        )}
                       </div>
-                      <button onClick={() => deleteAnnouncement(a._id)} className="p-1 text-red-500 hover:text-red-700">
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setHomeAnnouncement(a._id)}
+                          className={`p-1.5 rounded-lg border text-xs font-semibold transition-colors ${
+                            a.showOnHome
+                              ? 'bg-indigo-600 border-indigo-600 text-white'
+                              : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/40'
+                          }`}
+                          title="Show this announcement on Home page"
+                        >
+                          <Pin className="h-4 w-4" />
+                        </button>
+                        <button onClick={() => deleteAnnouncement(a._id)} className="p-1 text-red-500 hover:text-red-700">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>

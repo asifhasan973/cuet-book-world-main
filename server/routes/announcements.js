@@ -6,7 +6,17 @@ const { authMiddleware, requireRole } = require('../middleware/auth');
 // GET /api/announcements — Get active announcements (public)
 router.get('/', async (req, res) => {
   try {
-    const { all } = req.query;
+    const { all, home } = req.query;
+
+    // Home banner fetch: return a single chosen announcement (fallback to latest active).
+    if (home === 'true') {
+      const picked = await Announcement.findOne({ active: true, showOnHome: true }).sort({ updatedAt: -1, createdAt: -1 });
+      if (picked) return res.json(picked);
+
+      const latest = await Announcement.findOne({ active: true }).sort({ createdAt: -1 });
+      return res.json(latest || null);
+    }
+
     const query = all === 'true' ? {} : { active: true };
     const announcements = await Announcement.find(query).sort({ createdAt: -1 });
     res.json(announcements);
@@ -31,11 +41,32 @@ router.post('/', authMiddleware, requireRole('admin'), async (req, res) => {
 // PUT /api/announcements/:id — Update announcement (admin)
 router.put('/:id', authMiddleware, requireRole('admin'), async (req, res) => {
   try {
+    // Keep showOnHome unique when setting via generic update.
+    if (req.body?.showOnHome === true) {
+      await Announcement.updateMany({ _id: { $ne: req.params.id } }, { showOnHome: false });
+    }
     const announcement = await Announcement.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!announcement) return res.status(404).json({ message: 'Announcement not found' });
     res.json({ message: 'Announcement updated', announcement });
   } catch (error) {
     res.status(500).json({ message: 'Error updating announcement', error: error.message });
+  }
+});
+
+// PUT /api/announcements/:id/show-on-home — Select the single announcement shown on home (admin)
+router.put('/:id/show-on-home', authMiddleware, requireRole('admin'), async (req, res) => {
+  try {
+    const announcement = await Announcement.findById(req.params.id);
+    if (!announcement) return res.status(404).json({ message: 'Announcement not found' });
+
+    await Announcement.updateMany({}, { showOnHome: false });
+    announcement.showOnHome = true;
+    announcement.active = true;
+    await announcement.save();
+
+    res.json({ message: 'Home announcement updated', announcement });
+  } catch (error) {
+    res.status(500).json({ message: 'Error updating home announcement', error: error.message });
   }
 });
 

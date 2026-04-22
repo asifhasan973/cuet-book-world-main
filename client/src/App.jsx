@@ -17,6 +17,7 @@ import ManageBooks from './pages/librarian/ManageBooks';
 import StudentRecords from './pages/librarian/StudentRecords';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import UserManagement from './pages/admin/UserManagement';
+import Footer from './components/Footer';
 
 const AppContent = () => {
   const location = useLocation();
@@ -56,6 +57,7 @@ const AppContent = () => {
           <Route path="/admin/analytics" element={<ProtectedRoute allowedRoles={['admin']}><AdminDashboard /></ProtectedRoute>} />
         </Routes>
       </main>
+      <Footer />
     </div>
   );
 };

@@ -54,6 +54,7 @@ router.put('/:id/approve', authMiddleware, requireRole('librarian', 'admin'), as
       userId: session.userId,
       message: `Your video consultation "${session.topic}" has been approved! Join link: ${meetingLink}`,
       type: 'success',
+      link: '/profile?tab=notifications',
     });
 
     res.json({ message: 'Session approved', session });
@@ -76,6 +77,7 @@ router.put('/:id/reject', authMiddleware, requireRole('librarian', 'admin'), asy
       userId: session.userId,
       message: `Your video consultation request "${session.topic}" has been rejected.`,
       type: 'error',
+      link: '/profile?tab=notifications',
     });
 
     res.json({ message: 'Session rejected', session });

@@ -4,6 +4,7 @@ import Sidebar from '../../components/Sidebar';
 import StatusBadge from '../../components/StatusBadge';
 import Spinner from '../../components/Spinner';
 import Modal from '../../components/Modal';
+import { useToast } from '../../components/Toast';
 import { BookOpen, Users, Clock, AlertTriangle, CheckCircle, XCircle, BookMarked, Video, ExternalLink, Calendar } from 'lucide-react';
 
 const LibrarianDashboard = () => {
@@ -15,6 +16,7 @@ const LibrarianDashboard = () => {
   const [actionLoading, setActionLoading] = useState('');
   const [approveModal, setApproveModal] = useState({ open: false, renewal: null });
   const [scheduleForm, setScheduleForm] = useState({ scheduledDate: '', scheduledTime: '' });
+  const { addToast } = useToast();
 
   const fetchData = async () => {
     try {
@@ -37,8 +39,12 @@ const LibrarianDashboard = () => {
     setActionLoading(id);
     try {
       await API.put(`/borrows/${id}/${action}`);
+      addToast(`Successfully ${action}d the request.`, 'success');
       fetchData();
-    } catch (err) { console.error(err); }
+    } catch (err) { 
+      console.error(err); 
+      addToast(err.response?.data?.message || `Failed to ${action} request`, 'error');
+    }
     finally { setActionLoading(''); }
   };
 
@@ -56,8 +62,12 @@ const LibrarianDashboard = () => {
     try {
       const res = await API.put(`/renewals/${approveModal.renewal._id}/approve`, scheduleForm);
       setApproveModal({ open: false, renewal: null });
+      addToast('Renewal approved & meeting scheduled', 'success');
       fetchData();
-    } catch (err) { console.error(err); }
+    } catch (err) { 
+      console.error(err); 
+      addToast(err.response?.data?.message || 'Failed to approve renewal', 'error');
+    }
     finally { setActionLoading(''); }
   };
 
@@ -65,8 +75,12 @@ const LibrarianDashboard = () => {
     setActionLoading(id);
     try {
       await API.put(`/renewals/${id}/reject`);
+      addToast('Renewal rejected', 'success');
       fetchData();
-    } catch (err) { console.error(err); }
+    } catch (err) { 
+      console.error(err); 
+      addToast(err.response?.data?.message || 'Failed to reject renewal', 'error');
+    }
     finally { setActionLoading(''); }
   };
 
@@ -74,8 +88,12 @@ const LibrarianDashboard = () => {
     setActionLoading(id);
     try {
       await API.put(`/renewals/${id}/complete`);
+      addToast('Renewal completed and due date extended', 'success');
       fetchData();
-    } catch (err) { console.error(err); }
+    } catch (err) { 
+      console.error(err); 
+      addToast(err.response?.data?.message || 'Failed to complete renewal', 'error');
+    }
     finally { setActionLoading(''); }
   };
 

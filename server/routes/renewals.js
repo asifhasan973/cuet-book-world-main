@@ -110,6 +110,7 @@ router.put('/:id/approve', authMiddleware, requireRole('librarian', 'admin'), as
       userId: renewal.userId,
       message: `📹 Your renewal for "${bookTitle}" has been approved! A video consultation is scheduled for ${meetDate} at ${meetTime}. Click the meeting link in your Renew page to join.`,
       type: 'success',
+      link: '/renew?tab=status',
     });
 
     res.json({ message: 'Renewal approved with meeting link', renewal, meetingLink });
@@ -147,6 +148,7 @@ router.put('/:id/complete', authMiddleware, requireRole('librarian', 'admin'), a
       userId: renewal.userId,
       message: `✅ Your renewal for "${borrow?.bookId?.title}" is complete! Your new due date is ${borrow?.dueDate?.toLocaleDateString()}.`,
       type: 'success',
+      link: '/renew?tab=status',
     });
 
     res.json({ message: 'Renewal completed, due date extended', renewal });
@@ -175,6 +177,7 @@ router.put('/:id/reject', authMiddleware, requireRole('librarian', 'admin'), asy
       userId: renewal.userId,
       message: `❌ Your renewal request for "${bookTitle}" has been rejected.${reason ? ' Reason: ' + reason : ''}`,
       type: 'error',
+      link: '/renew?tab=status',
     });
 
     res.json({ message: 'Renewal rejected', renewal });
