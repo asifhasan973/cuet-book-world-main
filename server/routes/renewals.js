@@ -160,15 +160,20 @@ router.put('/:id/complete', authMiddleware, requireRole('librarian', 'admin'), a
 // PUT /api/renewals/:id/reject — Reject renewal
 router.put('/:id/reject', authMiddleware, requireRole('librarian', 'admin'), async (req, res) => {
   try {
-    const { reason } = req.body;
+    const { reason } = req.body || {};
     const renewal = await RenewalRequest.findById(req.params.id)
       .populate({
         path: 'borrowId',
         populate: { path: 'bookId', select: 'title' },
       });
     if (!renewal) return res.status(404).json({ message: 'Renewal not found' });
+    if (!['pending', 'approved'].includes(renewal.status)) {
+      return res.status(400).json({ message: 'Only pending or approved renewals can be rejected' });
+    }
 
     renewal.status = 'rejected';
+    renewal.librarianNote = reason || '';
+    renewal.approvedBy = req.user._id;
     await renewal.save();
 
     const bookTitle = renewal.borrowId?.bookId?.title || 'your book';

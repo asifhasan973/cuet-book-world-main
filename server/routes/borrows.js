@@ -2,9 +2,11 @@ const express = require('express');
 const router = express.Router();
 const BorrowRecord = require('../models/BorrowRecord');
 const Book = require('../models/Book');
-const User = require('../models/User');
 const Notification = require('../models/Notification');
 const { authMiddleware, requireRole } = require('../middleware/auth');
+const { calculateBorrowFineView, getAutoOverdueFine } = require('../utils/borrowFines');
+
+const BORROW_REJECTION_FINE = 50;
 
 // POST /api/borrows — Create borrow request
 router.post('/', authMiddleware, async (req, res) => {
@@ -56,19 +58,8 @@ router.get('/my', authMiddleware, async (req, res) => {
       .populate('bookId', 'title authors coverImage')
       .sort({ createdAt: -1 });
 
-    // Calculate fines for overdue books
     const now = new Date();
-    const result = borrows.map(b => {
-      const borrow = b.toObject();
-      if ((borrow.status === 'active' || borrow.status === 'overdue') && new Date(borrow.dueDate) < now) {
-        const daysLate = Math.ceil((now - new Date(borrow.dueDate)) / (1000 * 60 * 60 * 24));
-        borrow.fine = daysLate; // 1 Tk per day
-        borrow.status = 'overdue';
-      }
-      const remaining = Math.ceil((new Date(borrow.dueDate) - now) / (1000 * 60 * 60 * 24));
-      borrow.remaining = remaining;
-      return borrow;
-    });
+    const result = borrows.map(b => calculateBorrowFineView(b, now));
 
     res.json(result);
   } catch (error) {
@@ -88,7 +79,10 @@ router.get('/all', authMiddleware, requireRole('librarian', 'admin'), async (req
       .populate('userId', 'name email studentId department')
       .sort({ createdAt: -1 });
 
-    res.json(borrows);
+    const now = new Date();
+    const result = borrows.map(b => calculateBorrowFineView(b, now));
+
+    res.json(result);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching borrows', error: error.message });
   }
@@ -133,15 +127,20 @@ router.put('/:id/reject', authMiddleware, requireRole('librarian', 'admin'), asy
   try {
     const borrow = await BorrowRecord.findById(req.params.id).populate('bookId', 'title');
     if (!borrow) return res.status(404).json({ message: 'Borrow record not found' });
+    if (borrow.status !== 'pending') return res.status(400).json({ message: 'Only pending borrow requests can be rejected' });
 
     borrow.status = 'rejected';
+    borrow.fine = Math.max(Number(borrow.fine || 0), BORROW_REJECTION_FINE);
+    borrow.fineReason = 'Borrow request rejected by librarian';
+    borrow.fineUpdatedBy = req.user._id;
+    borrow.fineUpdatedAt = new Date();
     await borrow.save();
 
     await Notification.create({
       userId: borrow.userId,
-      message: `Your borrow request for "${borrow.bookId.title}" has been rejected.`,
+      message: `Your borrow request for "${borrow.bookId.title}" has been rejected. A ${BORROW_REJECTION_FINE} Tk fine has been added.`,
       type: 'error',
-      link: '/profile?tab=borrows',
+      link: '/profile?tab=history',
     });
 
     res.json({ message: 'Borrow rejected', borrow });
@@ -161,9 +160,10 @@ router.put('/:id/return', authMiddleware, requireRole('librarian', 'admin'), asy
 
     // Calculate final fine
     const now = new Date();
-    if (new Date(borrow.dueDate) < now) {
-      const daysLate = Math.ceil((now - new Date(borrow.dueDate)) / (1000 * 60 * 60 * 24));
-      borrow.fine = daysLate;
+    const overdueFine = getAutoOverdueFine(borrow, now);
+    if (overdueFine > 0 && !borrow.fineOverride) {
+      borrow.fine = Math.max(Number(borrow.fine || 0), overdueFine);
+      borrow.fineReason = 'Overdue return fine';
     }
     await borrow.save();
 

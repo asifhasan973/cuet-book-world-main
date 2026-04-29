@@ -73,7 +73,7 @@ const LandingPage = () => {
   useEffect(() => {
     API.get('/books?limit=8&sort=rating')
       .then((res) => setFeaturedBooks(res.data.books || []))
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   useEffect(() => {
@@ -109,7 +109,7 @@ const LandingPage = () => {
           <div className="absolute -bottom-35 left-1/2 h-80 w-80 -translate-x-1/2 rounded-full bg-emerald-200/40 blur-3xl dark:bg-emerald-500/10" />
         </div>
 
-        <div className="relative mx-auto max-w-7xl px-4 pb-16 pt-20 sm:px-6 lg:px-8 lg:pb-24 lg:pt-28">
+        <div className="relative mx-auto max-w-7xl px-4 pb-16 pt-20 sm:px-6 lg:px-8 lg:pb-24">
           <div className="grid items-center gap-12 lg:grid-cols-2">
             <div>
               <span className="inline-flex items-center gap-2 rounded-full border border-slate-300/80 bg-white/70 px-3 py-1 text-xs font-semibold tracking-wide text-slate-600 backdrop-blur dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300">
@@ -264,7 +264,7 @@ const LandingPage = () => {
                 to={`/books/${book._id}`}
                 className="group rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
               >
-                <div className="mb-3 flex aspect-2/3 items-center justify-center overflow-hidden rounded-xl bg-slate-100 dark:bg-slate-800">
+                <div className="relative mb-3 flex aspect-2/3 items-center justify-center overflow-hidden rounded-xl bg-slate-100 dark:bg-slate-800">
                   {book.coverImage ? (
                     <img
                       src={book.coverImage}
@@ -272,11 +272,15 @@ const LandingPage = () => {
                       className="h-full w-full object-cover"
                       onError={(e) => {
                         e.currentTarget.style.display = 'none';
+                        if (e.currentTarget.nextElementSibling) {
+                          e.currentTarget.nextElementSibling.style.display = 'flex';
+                        }
                       }}
                     />
-                  ) : (
+                  ) : null}
+                  <div className={`${book.coverImage ? 'hidden' : 'flex'} absolute inset-0 items-center justify-center`}>
                     <BookOpen className="h-7 w-7 text-slate-400 dark:text-slate-500" />
-                  )}
+                  </div>
                 </div>
                 <h3 className="line-clamp-2 text-sm font-bold text-slate-900 dark:text-white">{book.title}</h3>
                 <p className="mt-1 line-clamp-1 text-xs text-slate-600 dark:text-slate-300">{book.authors?.[0] || 'Unknown author'}</p>

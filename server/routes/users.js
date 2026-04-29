@@ -2,8 +2,10 @@ const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
 const BorrowRecord = require('../models/BorrowRecord');
+const Book = require('../models/Book');
 const Notification = require('../models/Notification');
 const { authMiddleware, requireRole } = require('../middleware/auth');
+const { calculateBorrowFineView } = require('../utils/borrowFines');
 
 // GET /api/users — All users (admin)
 router.get('/', authMiddleware, requireRole('admin'), async (req, res) => {
@@ -42,8 +44,17 @@ router.get('/students', authMiddleware, requireRole('librarian', 'admin'), async
       ];
     }
 
-    const students = await User.find(query).sort({ name: 1 });
-    res.json(students);
+    const students = await User.find(query).sort({ name: 1 }).lean();
+    const fineTotals = await BorrowRecord.aggregate([
+      { $match: { userId: { $in: students.map(student => student._id) }, fine: { $gt: 0 } } },
+      { $group: { _id: '$userId', fineBalance: { $sum: '$fine' } } },
+    ]);
+    const fineByUser = new Map(fineTotals.map(item => [item._id.toString(), item.fineBalance]));
+
+    res.json(students.map(student => ({
+      ...student,
+      fineBalance: fineByUser.get(student._id.toString()) || 0,
+    })));
   } catch (error) {
     res.status(500).json({ message: 'Error fetching students', error: error.message });
   }
@@ -55,14 +66,48 @@ router.get('/:id/borrows', authMiddleware, requireRole('librarian', 'admin'), as
     const borrows = await BorrowRecord.find({ userId: req.params.id })
       .populate('bookId', 'title authors')
       .sort({ createdAt: -1 });
-    res.json(borrows);
+    const now = new Date();
+    res.json(borrows.map(borrow => calculateBorrowFineView(borrow, now)));
   } catch (error) {
     res.status(500).json({ message: 'Error fetching student borrows', error: error.message });
   }
 });
 
+// PUT /api/users/:userId/borrows/:borrowId/fine — Set a borrow fine (librarian/admin)
+router.put('/:userId/borrows/:borrowId/fine', authMiddleware, requireRole('librarian', 'admin'), async (req, res) => {
+  try {
+    const fine = Number(req.body?.fine);
+    const reason = String(req.body?.reason || 'Fine updated by librarian').trim();
+
+    if (!Number.isFinite(fine) || fine < 0) {
+      return res.status(400).json({ message: 'Fine must be a non-negative number' });
+    }
+
+    const borrow = await BorrowRecord.findOne({ _id: req.params.borrowId, userId: req.params.userId })
+      .populate('bookId', 'title');
+    if (!borrow) return res.status(404).json({ message: 'Borrow record not found' });
+
+    borrow.fine = Math.round(fine);
+    borrow.fineOverride = true;
+    borrow.fineReason = reason || 'Fine updated by librarian';
+    borrow.fineUpdatedBy = req.user._id;
+    borrow.fineUpdatedAt = new Date();
+    await borrow.save();
+
+    await Notification.create({
+      userId: req.params.userId,
+      message: `Your fine for "${borrow.bookId?.title || 'a borrow record'}" is now ${borrow.fine} Tk.`,
+      type: borrow.fine > 0 ? 'warning' : 'success',
+      link: '/profile?tab=history',
+    });
+
+    res.json({ message: 'Fine updated', borrow: calculateBorrowFineView(borrow) });
+  } catch (error) {
+    res.status(500).json({ message: 'Error updating fine', error: error.message });
+  }
+});
+
 // DELETE /api/users/:userId/borrows/:borrowId — Remove a borrow from student (admin only)
-const Book = require('../models/Book');
 router.delete('/:userId/borrows/:borrowId', authMiddleware, requireRole('admin'), async (req, res) => {
   try {
     const borrow = await BorrowRecord.findOne({ _id: req.params.borrowId, userId: req.params.userId });

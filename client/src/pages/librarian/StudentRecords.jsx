@@ -5,7 +5,7 @@ import Spinner from '../../components/Spinner';
 import StatusBadge from '../../components/StatusBadge';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../components/Toast';
-import { Search, Trash2 } from 'lucide-react';
+import { Search, Trash2, Minus, Plus } from 'lucide-react';
 
 const StudentRecords = () => {
   const { dbUser } = useAuth();
@@ -16,7 +16,16 @@ const StudentRecords = () => {
   const [selectedName, setSelectedName] = useState('');
   const [borrows, setBorrows] = useState([]);
   const [deletingId, setDeletingId] = useState(null);
+  const [fineUpdatingId, setFineUpdatingId] = useState(null);
+  const [fineDrafts, setFineDrafts] = useState({});
   const { addToast } = useToast();
+
+  const updateStudentFineBalance = (userId, nextBorrows) => {
+    const fineBalance = nextBorrows.reduce((sum, borrow) => sum + Number(borrow.fine || 0), 0);
+    setStudents(prev => prev.map(student => (
+      student._id === userId ? { ...student, fineBalance } : student
+    )));
+  };
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -35,6 +44,8 @@ const StudentRecords = () => {
     try {
       const res = await API.get(`/users/${userId}/borrows`);
       setBorrows(res.data);
+      setFineDrafts(Object.fromEntries(res.data.map(borrow => [borrow._id, Number(borrow.fine || 0)])));
+      updateStudentFineBalance(userId, res.data);
     } catch (err) { 
         console.error(err); 
         addToast(err.response?.data?.message || 'Failed to fetch borrowing history', 'error');
@@ -46,7 +57,11 @@ const StudentRecords = () => {
     setDeletingId(borrowId);
     try {
       await API.delete(`/users/${selected}/borrows/${borrowId}`);
-      setBorrows(prev => prev.filter(b => b._id !== borrowId));
+      setBorrows(prev => {
+        const next = prev.filter(b => b._id !== borrowId);
+        updateStudentFineBalance(selected, next);
+        return next;
+      });
       addToast('Borrow record successfully removed', 'success');
     } catch (err) { 
         console.error(err); 
@@ -55,7 +70,31 @@ const StudentRecords = () => {
     finally { setDeletingId(null); }
   };
 
+  const handleFineUpdate = async (borrowId, fine) => {
+    const nextFine = Math.max(0, Math.round(Number(fine) || 0));
+    setFineUpdatingId(borrowId);
+    try {
+      const res = await API.put(`/users/${selected}/borrows/${borrowId}/fine`, {
+        fine: nextFine,
+        reason: 'Fine adjusted by librarian',
+      });
+      setBorrows(prev => {
+        const next = prev.map(borrow => (borrow._id === borrowId ? res.data.borrow : borrow));
+        updateStudentFineBalance(selected, next);
+        return next;
+      });
+      setFineDrafts(prev => ({ ...prev, [borrowId]: nextFine }));
+      addToast('Fine updated successfully', 'success');
+    } catch (err) {
+      console.error(err);
+      addToast(err.response?.data?.message || 'Failed to update fine', 'error');
+    } finally {
+      setFineUpdatingId(null);
+    }
+  };
+
   const isAdmin = dbUser?.role === 'admin';
+  const canManageFines = ['librarian', 'admin'].includes(dbUser?.role);
 
   return (
     <div className="flex min-h-screen bg-slate-50 dark:bg-slate-900">
@@ -86,6 +125,9 @@ const StudentRecords = () => {
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm text-slate-800 dark:text-white">{s.name}</p>
                       <p className="text-xs text-slate-500 dark:text-slate-400">{s.studentId} • {s.department} • {s.year}</p>
+                      <p className={`text-xs mt-1 font-semibold ${Number(s.fineBalance || 0) > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                        Fine: {Number(s.fineBalance || 0)} Tk
+                      </p>
                     </div>
                     <StatusBadge status={s.status} />
                   </button>
@@ -122,8 +164,51 @@ const StudentRecords = () => {
                           <p className="font-medium text-sm text-slate-800 dark:text-white truncate">{b.bookId?.title}</p>
                           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                             Due: {dueDate.toLocaleDateString()}
-                            {isOverdue && <span className="text-red-500 ml-2">• {daysLate}d late • Fine: {daysLate} Tk</span>}
+                            {isOverdue && <span className="text-red-500 ml-2">• {daysLate}d late</span>}
                           </p>
+                          <p className={`text-xs mt-1 font-semibold ${Number(b.fine || 0) > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                            Current Fine: {Number(b.fine || 0)} Tk{b.fineReason ? ` - ${b.fineReason}` : ''}
+                          </p>
+                          {canManageFines && (
+                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                              <button
+                                onClick={() => handleFineUpdate(b._id, Number(b.fine || 0) - 10)}
+                                disabled={fineUpdatingId === b._id}
+                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 dark:border-slate-700 px-2.5 py-1 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50"
+                              >
+                                <Minus className="h-3 w-3" /> 10
+                              </button>
+                              <input
+                                type="number"
+                                min="0"
+                                value={fineDrafts[b._id] ?? Number(b.fine || 0)}
+                                onChange={(e) => setFineDrafts(prev => ({ ...prev, [b._id]: e.target.value }))}
+                                className="w-24 rounded-lg border border-slate-200 dark:border-slate-700 bg-transparent px-2.5 py-1 text-xs text-slate-700 dark:text-slate-200"
+                                aria-label="Fine amount"
+                              />
+                              <button
+                                onClick={() => handleFineUpdate(b._id, fineDrafts[b._id] ?? b.fine)}
+                                disabled={fineUpdatingId === b._id}
+                                className="rounded-lg bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                              >
+                                Apply
+                              </button>
+                              <button
+                                onClick={() => handleFineUpdate(b._id, Number(b.fine || 0) + 10)}
+                                disabled={fineUpdatingId === b._id}
+                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 dark:border-slate-700 px-2.5 py-1 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50"
+                              >
+                                <Plus className="h-3 w-3" /> 10
+                              </button>
+                              <button
+                                onClick={() => handleFineUpdate(b._id, 0)}
+                                disabled={fineUpdatingId === b._id}
+                                className="rounded-lg bg-emerald-100 dark:bg-emerald-900/30 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-200 disabled:opacity-50"
+                              >
+                                Clear
+                              </button>
+                            </div>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
                           <StatusBadge status={isOverdue ? 'overdue' : b.status} />
@@ -153,4 +238,3 @@ const StudentRecords = () => {
 };
 
 export default StudentRecords;
-

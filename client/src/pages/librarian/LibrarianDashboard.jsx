@@ -39,7 +39,7 @@ const LibrarianDashboard = () => {
     setActionLoading(id);
     try {
       await API.put(`/borrows/${id}/${action}`);
-      addToast(`Successfully ${action}d the request.`, 'success');
+      addToast(`Borrow request ${action === 'approve' ? 'approved' : 'rejected'} successfully.`, 'success');
       fetchData();
     } catch (err) { 
       console.error(err); 

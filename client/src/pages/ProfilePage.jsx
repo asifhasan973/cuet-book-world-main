@@ -13,7 +13,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useLocation, Link, useNavigate } from 'react-router-dom';
 import API from '../api/axios';
-import { User, BookOpen, Clock, Calendar, CheckCircle, Bell, Settings, LayoutDashboard } from 'lucide-react';
+import { User, BookOpen, Clock, Calendar, CheckCircle, Bell, Settings, LayoutDashboard, AlertTriangle } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
 import { format } from 'date-fns';
 import { useToast } from '../components/Toast';
@@ -31,7 +31,7 @@ const ProfilePage = () => {
   const { addToast } = useToast();
 
   const [activeTab, setActiveTab] = useState(initialTab);
-  const [stats, setStats] = useState({ borrows: 0, returned: 0, overdue: 0 });
+  const [stats, setStats] = useState({ borrows: 0, returned: 0, overdue: 0, pending: 0, fines: 0 });
   const [borrows, setBorrows] = useState({ active: [], history: [] });
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -79,13 +79,15 @@ const ProfilePage = () => {
         const allBorrows = borrowsRes.data;
         const active = allBorrows.filter(b => b.status === 'active' || b.status === 'overdue' || b.status === 'pending');
         const history = allBorrows.filter(b => b.status === 'returned' || b.status === 'completed' || b.status === 'rejected');
+        const totalFines = allBorrows.reduce((sum, borrow) => sum + Number(borrow.fine || 0), 0);
         
         setBorrows({ active, history });
         setStats({
-          borrows: allBorrows.length,
+          borrows: active.filter(b => b.status === 'active' || b.status === 'overdue').length,
           returned: history.filter(b => b.status === 'returned').length,
           overdue: active.filter(b => b.status === 'overdue').length,
-          pending: allBorrows.filter(b => b.status === 'pending').length
+          pending: allBorrows.filter(b => b.status === 'pending').length,
+          fines: totalFines,
         });
         
         setNotifications(notifsRes.data);
@@ -187,6 +189,12 @@ const ProfilePage = () => {
                                 <span className="text-slate-500">Year:</span>
                                 <span className="font-medium text-slate-800 dark:text-white">{dbUser.year}</span>
                             </div>
+                            <div className="flex justify-between text-sm">
+                                <span className="text-slate-500">Outstanding Fine:</span>
+                                <span className={`font-semibold ${stats.fines > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                                    {stats.fines} Tk
+                                </span>
+                            </div>
                         </div>
                     )}
                 </div>
@@ -282,8 +290,8 @@ const ProfilePage = () => {
                                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
                                     <StatBox label="Total Borrows" value={stats.borrows} icon={BookOpen} color="indigo" />
                                     <StatBox label="Returned" value={stats.returned} icon={CheckCircle} color="emerald" />
-                                    <StatBox label="Currently Active" value={borrows.active.length} icon={Clock} color="amber" />
                                     <StatBox label="Overdue" value={stats.overdue} icon={Calendar} color="red" />
+                                    <StatBox label="Total Fine" value={stats.fines} suffix=" Tk" icon={AlertTriangle} color="red" />
                                 </div>
                                 
                                 {/* Recent Activity Snippet */}
@@ -306,6 +314,9 @@ const ProfilePage = () => {
                                                             {b.bookId?.title || 'Unknown Book'}
                                                         </Link>
                                                         <p className="text-xs text-slate-500 mt-1">Due: {format(new Date(b.dueDate), 'MMM dd, yyyy')}</p>
+                                                        {Number(b.fine || 0) > 0 && (
+                                                            <p className="text-xs text-red-600 dark:text-red-400 mt-1 font-semibold">Fine: {b.fine} Tk</p>
+                                                        )}
                                                     </div>
                                                 </div>
                                                 <StatusBadge status={b.status} />
@@ -355,6 +366,12 @@ const ProfilePage = () => {
                                                             <span className="flex items-center gap-1.5"><Calendar className="h-4 w-4 text-slate-400" /> Borrowed: {format(new Date(borrow.borrowDate), 'MMM dd, yyyy')}</span>
                                                             <span className={`flex items-center gap-1.5 font-medium ${new Date(borrow.dueDate) < new Date() ? 'text-red-500' : ''}`}><Clock className="h-4 w-4 text-slate-400" /> Due: {format(new Date(borrow.dueDate), 'MMM dd, yyyy')}</span>
                                                         </div>
+                                                        {Number(borrow.fine || 0) > 0 && (
+                                                            <div className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-red-50 dark:bg-red-950/30 px-3 py-1.5 text-sm font-semibold text-red-700 dark:text-red-400 border border-red-100 dark:border-red-900/50">
+                                                                <AlertTriangle className="h-4 w-4" />
+                                                                Fine: {borrow.fine} Tk{borrow.fineReason ? ` - ${borrow.fineReason}` : ''}
+                                                            </div>
+                                                        )}
                                                     </div>
                                                     <StatusBadge status={borrow.status} />
                                                 </div>
@@ -391,7 +408,16 @@ const ProfilePage = () => {
                                                         <Link to={`/books/${borrow.bookId?._id}`}>
                                                             <h4 className="font-bold text-slate-800 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">{borrow.bookId?.title || 'Unknown Book'}</h4>
                                                         </Link>
-                                                        <p className="text-sm text-slate-500 mt-1">Returned: {borrow.returnDate ? format(new Date(borrow.returnDate), 'MMM dd, yyyy') : 'N/A'}</p>
+                                                        <p className="text-sm text-slate-500 mt-1">
+                                                            {borrow.status === 'rejected'
+                                                                ? `Rejected: ${format(new Date(borrow.updatedAt || borrow.createdAt), 'MMM dd, yyyy')}`
+                                                                : `Returned: ${borrow.returnDate ? format(new Date(borrow.returnDate), 'MMM dd, yyyy') : 'N/A'}`}
+                                                        </p>
+                                                        {Number(borrow.fine || 0) > 0 && (
+                                                            <p className="text-sm text-red-600 dark:text-red-400 mt-1 font-semibold">
+                                                                Fine: {borrow.fine} Tk{borrow.fineReason ? ` - ${borrow.fineReason}` : ''}
+                                                            </p>
+                                                        )}
                                                     </div>
                                                     <StatusBadge status={borrow.status} />
                                                 </div>
@@ -591,7 +617,7 @@ const TabButton = ({ active, onClick, icon: Icon, label, badge, badgeColor = 'bg
 );
 
 /** Top Overview Stat Box */
-const StatBox = ({ label, value, icon: Icon, color }) => {
+const StatBox = ({ label, value, icon: Icon, color, suffix = '' }) => {
     const { count, ref } = useAnimatedCounter(value);
     
     const colors = {
@@ -606,7 +632,7 @@ const StatBox = ({ label, value, icon: Icon, color }) => {
             <Icon className="absolute -right-4 -bottom-4 h-24 w-24 text-white opacity-20 group-hover:scale-110 transition-transform" />
             <div className="relative z-10">
                 <p className="text-sm font-medium text-white/80 mb-1">{label}</p>
-                <div ref={ref} className="text-3xl font-extrabold">{count}</div>
+                <div ref={ref} className="text-3xl font-extrabold">{count}{suffix}</div>
             </div>
         </div>
     );

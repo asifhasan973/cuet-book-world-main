@@ -9,6 +9,7 @@ import {
 } from 'firebase/auth';
 import { auth, googleProvider } from '../firebase';
 import API from '../api/axios';
+import { createEmailDomainError, isAllowedCuetEmail } from '../utils/emailDomain';
 
 const AuthContext = createContext();
 
@@ -21,6 +22,10 @@ export const AuthProvider = ({ children }) => {
 
   // Sync user to MongoDB and fetch profile
   const syncUser = async (firebaseUser, extraData = {}) => {
+    if (!isAllowedCuetEmail(firebaseUser.email)) {
+      throw createEmailDomainError();
+    }
+
     try {
       await API.post('/auth/sync', {
         firebaseUid: firebaseUser.uid,
@@ -41,7 +46,7 @@ export const AuthProvider = ({ children }) => {
       setDbUser({
         name: firebaseUser.displayName || firebaseUser.email.split('@')[0],
         email: firebaseUser.email,
-        role: 'student',
+        role: extraData.requestedRole || 'student',
         department: 'CSE',
         year: '1st',
         status: 'active',
@@ -52,10 +57,17 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setUser(firebaseUser);
       if (firebaseUser) {
-        await syncUser(firebaseUser);
+        if (!isAllowedCuetEmail(firebaseUser.email)) {
+          await signOut(auth);
+          setUser(null);
+          setDbUser(null);
+        } else {
+          setUser(firebaseUser);
+          await syncUser(firebaseUser);
+        }
       } else {
+        setUser(null);
         setDbUser(null);
       }
       setLoading(false);
@@ -64,21 +76,36 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const login = async (email, password) => {
-    const result = await signInWithEmailAndPassword(auth, email, password);
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!isAllowedCuetEmail(normalizedEmail)) {
+      throw createEmailDomainError();
+    }
+
+    const result = await signInWithEmailAndPassword(auth, normalizedEmail, password);
     const profile = await syncUser(result.user);
     return profile;
   };
 
-  const register = async ({ name, email, password, studentId, department, year }) => {
-    const result = await createUserWithEmailAndPassword(auth, email, password);
+  const register = async ({ name, email, password, studentId, department, year, requestedRole }) => {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!isAllowedCuetEmail(normalizedEmail)) {
+      throw createEmailDomainError();
+    }
+
+    const result = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
     await updateProfile(result.user, { displayName: name });
-    const profile = await syncUser(result.user, { name, studentId, department, year });
+    const profile = await syncUser(result.user, { name, studentId, department, year, requestedRole });
     return profile;
   };
 
-  const loginWithGoogle = async () => {
+  const loginWithGoogle = async (requestedRole) => {
     const result = await signInWithPopup(auth, googleProvider);
-    const profile = await syncUser(result.user);
+    if (!isAllowedCuetEmail(result.user.email)) {
+      await signOut(auth);
+      throw createEmailDomainError();
+    }
+
+    const profile = await syncUser(result.user, requestedRole ? { requestedRole } : {});
     return profile;
   };
 

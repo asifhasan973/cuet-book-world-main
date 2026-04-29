@@ -129,13 +129,17 @@ const EBooks = () => {
                     src={ebook.coverImage} 
                     alt={ebook.title} 
                     className="w-full h-full object-cover"
-                    onError={(e) => { e.target.style.display = 'none'; }}
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                      if (e.currentTarget.nextElementSibling) {
+                        e.currentTarget.nextElementSibling.style.display = 'flex';
+                      }
+                    }}
                   />
-                ) : (
-                    <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/30">
-                        <BookOpen className="h-10 w-10 text-emerald-400/50" />
-                    </div>
-                )}
+                ) : null}
+                <div className={`${ebook.coverImage ? 'hidden' : 'flex'} absolute inset-0 items-center justify-center bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/30`}>
+                    <BookOpen className="h-10 w-10 text-emerald-400/50" />
+                </div>
                 
                 {/* File Type Badge */}
                 <div className="absolute top-3 right-3 bg-red-500 text-white text-[10px] font-bold px-2 py-1 rounded shadow-sm flex items-center gap-1 uppercase">

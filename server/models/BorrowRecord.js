@@ -9,6 +9,10 @@ const borrowRecordSchema = new mongoose.Schema({
   renewalDate: { type: Date, default: null },
   status: { type: String, enum: ['pending', 'active', 'returned', 'overdue', 'rejected'], default: 'pending' },
   fine: { type: Number, default: 0 },
+  fineOverride: { type: Boolean, default: false },
+  fineReason: { type: String, default: '' },
+  fineUpdatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  fineUpdatedAt: { type: Date },
 }, { timestamps: true });
 
 module.exports = mongoose.model('BorrowRecord', borrowRecordSchema);

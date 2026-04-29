@@ -20,6 +20,7 @@ import {
   BookMarked, RefreshCw, Video, Smartphone, GraduationCap, Library,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { CUET_EMAIL_DOMAIN_MESSAGE } from '../utils/emailDomain';
 
 /* ── Department list for registration ── */
 const DEPARTMENTS = ['CSE', 'EEE', 'CE', 'ME', 'URP', 'ECE', 'MSE', 'PME', 'WRE', 'Architecture'];
@@ -62,7 +63,6 @@ const AuthPage = () => {
 
   const handleRoleSwitch = (role) => {
     setLoginRole(role);
-    setIsLogin(true);
     setError('');
   };
 
@@ -82,8 +82,10 @@ const AuthPage = () => {
           name: formData.name, email: formData.email,
           password: formData.password, studentId: formData.studentId,
           department: formData.department, year: formData.year,
+          requestedRole: loginRole,
         });
-        navigate('/home');
+        if (loginRole === 'librarian') navigate('/librarian/dashboard');
+        else navigate('/home');
       }
     } catch (err) {
       const code = err.code;
@@ -92,6 +94,7 @@ const AuthPage = () => {
       else if (code === 'auth/invalid-credential') setError('Invalid email or password.');
       else if (code === 'auth/email-already-in-use') setError('An account with this email already exists.');
       else if (code === 'auth/weak-password') setError('Password must be at least 6 characters.');
+      else if (code === 'auth/unauthorized-domain') setError(CUET_EMAIL_DOMAIN_MESSAGE);
       else setError(err.message || 'An error occurred. Please try again.');
     } finally {
       setLoading(false);
@@ -102,12 +105,14 @@ const AuthPage = () => {
     setLoading(true);
     setError('');
     try {
-      const profile = await loginWithGoogle();
+      const profile = await loginWithGoogle(isLogin ? undefined : loginRole);
       if (profile?.role === 'admin') navigate('/admin/dashboard');
       else if (profile?.role === 'librarian') navigate('/librarian/dashboard');
       else navigate('/home');
     } catch (err) {
-      if (err.code !== 'auth/popup-closed-by-user') {
+      if (err.code === 'auth/unauthorized-domain') {
+        setError(CUET_EMAIL_DOMAIN_MESSAGE);
+      } else if (err.code !== 'auth/popup-closed-by-user') {
         setError('Google sign-in failed. Please try again.');
       }
     } finally {
@@ -115,7 +120,7 @@ const AuthPage = () => {
     }
   };
 
-  const isLibrarian = loginRole === 'librarian';
+  const isLibrarian = !isLogin && loginRole === 'librarian';
   const features = isLibrarian ? LIBRARIAN_FEATURES : STUDENT_FEATURES;
 
   return (
@@ -232,29 +237,31 @@ const AuthPage = () => {
             <span className="text-2xl font-bold gradient-text">CUET Bookworld</span>
           </div>
 
-          {/* ── Role Selector ── */}
-          <div className="glass-card p-1.5 rounded-2xl flex gap-1">
-            <button
-              onClick={() => handleRoleSwitch('student')}
-              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all duration-300 ${
-                !isLibrarian
-                  ? 'bg-gradient-to-r from-indigo-500 to-violet-500 text-white shadow-lg shadow-indigo-500/25'
-                  : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
-              }`}
-            >
-              <GraduationCap className="h-4 w-4" /> Student
-            </button>
-            <button
-              onClick={() => handleRoleSwitch('librarian')}
-              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all duration-300 ${
-                isLibrarian
-                  ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-500/25'
-                  : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
-              }`}
-            >
-              <Library className="h-4 w-4" /> Librarian
-            </button>
-          </div>
+          {/* ── Registration Role Selector ── */}
+          {!isLogin && (
+            <div className="glass-card p-1.5 rounded-2xl flex gap-1">
+              <button
+                onClick={() => handleRoleSwitch('student')}
+                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all duration-300 ${
+                  loginRole === 'student'
+                    ? 'bg-gradient-to-r from-indigo-500 to-violet-500 text-white shadow-lg shadow-indigo-500/25'
+                    : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                }`}
+              >
+                <GraduationCap className="h-4 w-4" /> Student
+              </button>
+              <button
+                onClick={() => handleRoleSwitch('librarian')}
+                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all duration-300 ${
+                  loginRole === 'librarian'
+                    ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-500/25'
+                    : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                }`}
+              >
+                <Library className="h-4 w-4" /> Librarian
+              </button>
+            </div>
+          )}
 
           {/* ── Form Card ── */}
           <div className="glass-card p-8 sm:p-10 rounded-2xl relative overflow-hidden">
@@ -265,12 +272,12 @@ const AuthPage = () => {
 
             <div className="text-center mb-6">
               <h2 className="text-2xl font-bold mb-2 text-slate-800 dark:text-white">
-                {isLibrarian ? 'Librarian Login' : (isLogin ? 'Welcome Back' : 'Create an Account')}
+                {isLogin ? 'Welcome Back' : (isLibrarian ? 'Create Librarian Account' : 'Create Student Account')}
               </h2>
               <p className="text-slate-500 dark:text-slate-400 text-sm">
-                {isLibrarian
-                  ? 'Sign in with your librarian credentials'
-                  : (isLogin ? 'Enter your credentials to access your account' : 'Register with your CUET credentials')}
+                {isLogin
+                  ? 'Enter your credentials. Your dashboard will open based on your account role.'
+                  : (isLibrarian ? 'Register with your CUET staff credentials' : 'Register with your CUET student credentials')}
               </p>
             </div>
 
@@ -282,8 +289,8 @@ const AuthPage = () => {
             )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Registration fields — students only */}
-              {!isLogin && !isLibrarian && (
+              {/* Registration fields */}
+              {!isLogin && (
                 <>
                   <div>
                     <label className="block text-sm font-medium mb-1.5 text-slate-700 dark:text-slate-300">Full Name</label>
@@ -296,26 +303,37 @@ const AuthPage = () => {
                         placeholder="e.g. Rafiq Ahmed" />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-sm font-medium mb-1.5 text-slate-700 dark:text-slate-300">Student ID</label>
-                      <input type="text" name="studentId" required onChange={handleChange}
-                        className="block w-full px-3 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-transparent text-sm transition-all"
-                        placeholder="e.g. 2204010" />
+                  {!isLibrarian && (
+                    <>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-sm font-medium mb-1.5 text-slate-700 dark:text-slate-300">Student ID</label>
+                          <input type="text" name="studentId" required onChange={handleChange}
+                            className="block w-full px-3 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-transparent text-sm transition-all"
+                            placeholder="e.g. 2204010" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-1.5 text-slate-700 dark:text-slate-300">Department</label>
+                          <select name="department" onChange={handleChange} className="block w-full px-3 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-transparent dark:bg-slate-800 text-sm">
+                            {DEPARTMENTS.map((dept) => <option key={dept} value={dept}>{dept}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1.5 text-slate-700 dark:text-slate-300">Academic Year</label>
+                        <select name="year" onChange={handleChange} className="block w-full px-3 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-transparent dark:bg-slate-800 text-sm">
+                          {YEARS.map((y) => <option key={y} value={y}>{y} {y !== 'Faculty' ? 'Year' : ''}</option>)}
+                        </select>
+                      </div>
+                    </>
+                  )}
+                  {isLibrarian && (
+                    <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200/50 dark:border-emerald-800/30">
+                      <p className="text-xs text-emerald-700 dark:text-emerald-400">
+                        Librarian registration creates a staff dashboard account using your allowed CUET email domain.
+                      </p>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1.5 text-slate-700 dark:text-slate-300">Department</label>
-                      <select name="department" onChange={handleChange} className="block w-full px-3 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-transparent dark:bg-slate-800 text-sm">
-                        {DEPARTMENTS.map((dept) => <option key={dept} value={dept}>{dept}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1.5 text-slate-700 dark:text-slate-300">Academic Year</label>
-                    <select name="year" onChange={handleChange} className="block w-full px-3 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 bg-transparent dark:bg-slate-800 text-sm">
-                      {YEARS.map((y) => <option key={y} value={y}>{y} {y !== 'Faculty' ? 'Year' : ''}</option>)}
-                    </select>
-                  </div>
+                  )}
                 </>
               )}
 
@@ -328,8 +346,11 @@ const AuthPage = () => {
                   </div>
                   <input type="email" name="email" required onChange={handleChange}
                     className="block w-full pl-10 pr-3 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-transparent text-sm transition-all"
-                    placeholder={isLibrarian ? 'librarian@cuet.ac.bd' : 'student@cuet.ac.bd'} />
+                    placeholder={isLogin ? 'name@cuet.ac.bd' : (isLibrarian ? 'librarian@cuet.ac.bd' : 'name@student.cuet.ac.bd')} />
                 </div>
+                <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
+                  Allowed domains: @cuet.ac.bd and @student.cuet.ac.bd
+                </p>
               </div>
 
               {/* Password */}
@@ -373,59 +394,55 @@ const AuthPage = () => {
                 {loading ? (
                   <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 ) : (
-                  isLogin ? 'Log In' : 'Create Account'
+                  isLogin ? 'Log In' : (isLibrarian ? 'Create Librarian Account' : 'Create Student Account')
                 )}
               </button>
             </form>
 
-            {/* Google Login — students only */}
-            {!isLibrarian && (
-              <>
-                <div className="flex items-center gap-4 my-5">
-                  <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
-                  <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">OR</span>
-                  <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
-                </div>
+            {/* Google Login — dynamic account role on login, selected role on registration */}
+            <>
+              <div className="flex items-center gap-4 my-5">
+                <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
+                <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">OR</span>
+                <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
+              </div>
 
-                <button
-                  onClick={handleGoogleLogin}
-                  disabled={loading}
-                  className="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:shadow-md transition-all text-sm font-medium disabled:opacity-60"
-                >
-                  <svg className="h-5 w-5" viewBox="0 0 24 24">
-                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
-                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-                  </svg>
-                  Continue with Google
-                </button>
-              </>
-            )}
+              <button
+                onClick={handleGoogleLogin}
+                disabled={loading}
+                className="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:shadow-md transition-all text-sm font-medium disabled:opacity-60"
+              >
+                <svg className="h-5 w-5" viewBox="0 0 24 24">
+                  <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
+                  <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                  <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                  <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                </svg>
+                Continue with Google
+              </button>
+            </>
 
             {/* Librarian note */}
             {isLibrarian && (
               <div className="mt-5 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-800/30">
                 <p className="text-xs text-amber-700 dark:text-amber-400 text-center">
-                  🔒 Librarian accounts are managed by the admin. Contact your administrator if you need access.
+                  Use your official CUET email. Login later will route this account to the librarian dashboard automatically.
                 </p>
               </div>
             )}
 
-            {/* Toggle Login/Register — students only */}
-            {!isLibrarian && (
-              <div className="mt-6 text-center">
-                <p className="text-sm text-slate-600 dark:text-slate-400">
-                  {isLogin ? "Don't have an account?" : "Already have an account?"}
-                  <button
-                    onClick={() => { setIsLogin(!isLogin); setError(''); }}
-                    className="ml-2 text-indigo-600 dark:text-indigo-400 font-semibold hover:underline focus:outline-none"
-                  >
-                    {isLogin ? 'Sign up' : 'Log in'}
-                  </button>
-                </p>
-              </div>
-            )}
+            {/* Toggle Login/Register */}
+            <div className="mt-6 text-center">
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                {isLogin ? "Don't have an account?" : "Already have an account?"}
+                <button
+                  onClick={() => { setIsLogin(!isLogin); setError(''); }}
+                  className="ml-2 text-indigo-600 dark:text-indigo-400 font-semibold hover:underline focus:outline-none"
+                >
+                  {isLogin ? 'Sign up' : 'Log in'}
+                </button>
+              </p>
+            </div>
           </div>
         </div>
       </div>

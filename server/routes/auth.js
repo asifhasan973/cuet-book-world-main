@@ -2,13 +2,33 @@ const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
 
+const ALLOWED_EMAIL_DOMAINS = new Set(['cuet.ac.bd', 'student.cuet.ac.bd']);
+
+const isAllowedCuetEmail = (email = '') => {
+  const normalized = String(email).trim().toLowerCase();
+  const atIndex = normalized.lastIndexOf('@');
+
+  if (atIndex <= 0 || atIndex === normalized.length - 1) {
+    return false;
+  }
+
+  return ALLOWED_EMAIL_DOMAINS.has(normalized.slice(atIndex + 1));
+};
+
 // POST /api/auth/sync — Sync Firebase user to MongoDB
 router.post('/sync', async (req, res) => {
   try {
-    const { firebaseUid, name, email, studentId, department, year, avatar } = req.body;
+    const { firebaseUid, name, email, studentId, department, year, avatar, requestedRole } = req.body;
 
     if (!firebaseUid || !email) {
       return res.status(400).json({ message: 'firebaseUid and email are required' });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!isAllowedCuetEmail(normalizedEmail)) {
+      return res.status(403).json({
+        message: 'Use a CUET email ending in @cuet.ac.bd or @student.cuet.ac.bd.',
+      });
     }
 
     let user = await User.findOne({ firebaseUid });
@@ -21,7 +41,7 @@ router.post('/sync', async (req, res) => {
     } else {
       // Check if a user with this email already exists (e.g. seeded with a placeholder UID)
       // If so, update that record's firebaseUid so the role/data is preserved
-      let existingByEmail = await User.findOne({ email });
+      let existingByEmail = await User.findOne({ email: normalizedEmail });
       if (existingByEmail) {
         existingByEmail.firebaseUid = firebaseUid;
         if (name) existingByEmail.name = name;
@@ -30,9 +50,9 @@ router.post('/sync', async (req, res) => {
         user = existingByEmail;
       } else {
         // Brand new user — determine role based on email pattern
-        let role = 'student';
-        if (email === 'librarian@cuet.ac.bd') role = 'librarian';
-        if (email === 'admin@cuet.ac.bd') role = 'admin';
+        let role = ['student', 'librarian'].includes(requestedRole) ? requestedRole : 'student';
+        if (normalizedEmail === 'librarian@cuet.ac.bd') role = 'librarian';
+        if (normalizedEmail === 'admin@cuet.ac.bd') role = 'admin';
 
         // Determine borrow limit — all students get 3, staff get 6
         let borrowLimit = 3;
@@ -40,8 +60,8 @@ router.post('/sync', async (req, res) => {
 
         user = await User.create({
           firebaseUid,
-          name: name || email.split('@')[0],
-          email,
+          name: name || normalizedEmail.split('@')[0],
+          email: normalizedEmail,
           studentId: studentId || '',
           department: department || 'CSE',
           year: (role !== 'student') ? 'Faculty' : (year || '1st'),

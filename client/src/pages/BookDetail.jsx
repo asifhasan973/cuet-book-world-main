@@ -148,13 +148,18 @@ const BookDetail = () => {
                                             src={book.coverImage} 
                                             alt={book.title} 
                                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                                            onError={(e) => {
+                                                e.currentTarget.style.display = 'none';
+                                                if (e.currentTarget.nextElementSibling) {
+                                                    e.currentTarget.nextElementSibling.style.display = 'flex';
+                                                }
+                                            }}
                                         />
-                                    ) : (
-                                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-indigo-50 to-violet-50 dark:from-indigo-900/20 dark:to-violet-900/20">
-                                            <BookOpen className="h-16 w-16 text-indigo-300 dark:text-indigo-700/50 mb-2" />
-                                            <span className="text-sm font-bold text-indigo-400/50 uppercase tracking-widest">{book.department}</span>
-                                        </div>
-                                    )}
+                                    ) : null}
+                                    <div className={`${book.coverImage ? 'hidden' : 'flex'} absolute inset-0 flex-col items-center justify-center bg-gradient-to-br from-indigo-50 to-violet-50 dark:from-indigo-900/20 dark:to-violet-900/20`}>
+                                        <BookOpen className="h-16 w-16 text-indigo-300 dark:text-indigo-700/50 mb-2" />
+                                        <span className="text-sm font-bold text-indigo-400/50 uppercase tracking-widest">{book.department}</span>
+                                    </div>
                                     {!isAvailable && (
                                         <div className="absolute inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center">
                                             <span className="bg-red-500 text-white px-4 py-2 rounded-xl text-sm font-bold uppercase tracking-wider transform -rotate-12 outline outline-2 outline-white/20">

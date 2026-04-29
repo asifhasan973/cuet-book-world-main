@@ -9,6 +9,7 @@ const renewalRequestSchema = new mongoose.Schema({
   scheduledDate: { type: Date },
   scheduledTime: { type: String },
   notes: { type: String, default: '' },
+  librarianNote: { type: String, default: '' },
   status: { type: String, enum: ['pending', 'approved', 'completed', 'rejected'], default: 'pending' },
   meetingLink: { type: String, default: '' },
   approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
